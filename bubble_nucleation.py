@@ -15,14 +15,14 @@ class BubbleNucleation:
 
     def bounce_action(self, T):
         # Returns S3/T given the parameters in Veff in thin-wall approx
-        return 13.72 * power(T / self.veff.a3(T), 2)  * power(abs(self.veff.a2(T)) / T**2, 3/2) \
-            * self.fx_bounce_action(4*self.veff.a4(T) * self.veff.a2(T) / self.veff.a3(T)**2)
-        #delta = 8*self.veff.a4(T) * self.veff.a2(T) / self.veff.a3(T)**2
-        #beta1 = 8.2938
-        #beta2 = -5.5330
-        #beta3 = 0.8180
-        #return -pi * self.veff.a3(T) * 8*sqrt(2)*power(2 - delta, -2)*sqrt(delta/2) \
-        #    * (beta1*delta + beta2*delta**2 + beta3*delta**3) / power(self.veff.a4(T), 1.5) / 81 / T
+        #return 13.72 * power(T / self.veff.a3(T), 2)  * power(abs(self.veff.a2(T)) / T**2, 3/2) \
+        #    * self.fx_bounce_action(4*self.veff.a4(T) * self.veff.a2(T) / self.veff.a3(T)**2)
+        delta = 8*self.veff.a4(T) * self.veff.a2(T) / self.veff.a3(T)**2
+        beta1 = 8.2938
+        beta2 = -5.5330
+        beta3 = 0.8180
+        return -pi * self.veff.a3(T) * 8*sqrt(2)*power(2 - delta, -2)*sqrt(delta/2) \
+            * (beta1*delta + beta2*delta**2 + beta3*delta**3) / power(self.veff.a4(T), 1.5) / 81 / T
 
     def rate(self, T):
         return np.real(T**4 * power(abs(self.bounce_action(T)) / (2*pi), 3/2) * np.exp(-self.bounce_action(T))) \

@@ -96,11 +96,11 @@ class VEffMarfatia(VFT):
 
     def a3(self, T):
         beta = 1/T
-        return -(1/(192*pi**2*beta**4*self.mu**6))*(18*self.gchi**3*self.mchi*beta**4*self.mu**6-32*self.c*pi**2*beta**4*self.mu**6-c**3*pi*(beta**2*self.mu**2)**(3/2)+12*self.gchi**3*self.mchi*beta**4*self.mu**6*log((self.mchi**2*beta**2)/PT_CONST_AF)-12*self.gchi**3*self.mchi*beta**4*self.mu**6*log(self.mchi**2/self.Lambda**2))
+        return -(1/(192*pi**2*beta**4*self.mu**6))*(18*self.gchi**3*self.mchi*beta**4*self.mu**6-32*self.c*pi**2*beta**4*self.mu**6-self.c**3*pi*(beta**2*self.mu**2)**(3/2)+12*self.gchi**3*self.mchi*beta**4*self.mu**6*log((self.mchi**2*beta**2)/PT_CONST_AF)-12*self.gchi**3*self.mchi*beta**4*self.mu**6*log(self.mchi**2/self.Lambda**2))
 
     def a4(self, T):
         beta = 1/T
-        return (1/(384*pi**2*beta**4*self.mu**4))*(-8*self.gchi**2*pi**2*beta**2*self.mu**4-9*self.c**2*beta**4*self.mu**4-54*self.gchi**2*self.mchi**2*beta**4*self.mu**4+8*pi**2*beta**2*self.lam*self.mu**4+192*pi**2*beta**4*self.mu**6-9*beta**4*self.lam*self.mu**6-12*c**2*pi*(beta**2*self.mu**2)**(3/2)-24*pi*self.lam*self.mu**2*(beta**2*self.mu**2)**(3/2)-36*self.gchi**2*self.mchi**2*beta**4*self.mu**4*((self.mchi**2*beta**2)/PT_CONST_AF)+36*self.gchi**2*self.mchi**2*beta**4*self.mu**4*(self.mchi**2/self.Lambda**2)-6*c**2*beta**4*self.mu**4*((beta**2*self.mu**2)/PT_CONST_AB)-6*beta**4*self.lam*self.mu**6*((beta**2*self.mu**2)/PT_CONST_AB)+6*c**2*beta**4*self.mu**4*(self.mu**2/self.Lambda**2)+6*beta**4*self.lam*self.mu**6*(self.mu**2/self.Lambda**2))
+        return (1/(384*pi**2*beta**4*self.mu**4))*(-8*self.gchi**2*pi**2*beta**2*self.mu**4-9*self.c**2*beta**4*self.mu**4-54*self.gchi**2*self.mchi**2*beta**4*self.mu**4+8*pi**2*beta**2*self.lam*self.mu**4+192*pi**2*beta**4*self.mu**6-9*beta**4*self.lam*self.mu**6-12*self.c**2*pi*(beta**2*self.mu**2)**(3/2)-24*pi*self.lam*self.mu**2*(beta**2*self.mu**2)**(3/2)-36*self.gchi**2*self.mchi**2*beta**4*self.mu**4*((self.mchi**2*beta**2)/PT_CONST_AF)+36*self.gchi**2*self.mchi**2*beta**4*self.mu**4*(self.mchi**2/self.Lambda**2)-6*self.c**2*beta**4*self.mu**4*((beta**2*self.mu**2)/PT_CONST_AB)-6*beta**4*self.lam*self.mu**6*((beta**2*self.mu**2)/PT_CONST_AB)+6*self.c**2*beta**4*self.mu**4*(self.mu**2/self.Lambda**2)+6*beta**4*self.lam*self.mu**6*(self.mu**2/self.Lambda**2))
         
     def __call__(self, phi, T):
         return np.real(self.a2(1/T)*phi**2 + self.a3(1/T)*phi**3 + self.a4(1/T)*phi**4)
@@ -119,12 +119,12 @@ class VEffMarfatia2(VFT):
         self.T0 = self.get_T0()
         self.Tc = self.get_Tc()
     
-    def phi_plus(self, T0):
+    def phi_plus0(self, T0):
         return (3*self.c + sqrt(9*self.c**2 + 8*self.lam*self.d*T0**2))/(2*self.lam)
-
+    
     def get_T0(self):
         def root_func(T0):
-            return self.b - 0.5 * self.phi_plus(T0)**2 * (self.d*T0**2 + 0.5*self.c*self.phi_plus(T0))
+            return self.b - 0.5 * self.phi_plus0(T0)**2 * (self.d*T0**2 + 0.5*self.c*self.phi_plus0(T0))
         
         res = fsolve(root_func, [1.0])
         return res[0]
@@ -148,3 +148,149 @@ class VEffMarfatia2(VFT):
 
     def __call__(self, phi, T):
         return np.real(self.d * (T**2 - self.T0**2)*phi**2 - (self.a*T + self.c)*phi**3 + 0.25*self.lam*phi**4)
+
+##### B-L #####
+
+# class for specifying particle information relevant to thermal potentials
+class Field(object):
+    def __init__(self, dof=0, mass_squared=None, type='', name=''):
+        self.dof = dof
+        self.mass_squared = mass_squared
+        self.type = type
+        self.name = name
+    
+    def __str__(self):
+        return f'field: {self.name} // type: {self.type} // DoF = {self.dof} // mass squared: {self.mass_squared}'
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class VeffBL(VFT):
+    def __init__(self, alpha_BL0=0.01, k=0.1, phi_min=1e-6, phi_max=1.4, mu=1):
+        self.alpha_BL0 = alpha_BL0
+        self.k = k
+        self.phi_min = phi_min
+        self.phi_max = phi_max # should be greater than mu to allow t = 0
+        self.mu = mu
+
+        self.t_values = self.RGE_solutions()[0]
+        self.sol1 = self.RGE_solutions()[1]
+        self.sol2 = self.RGE_solutions()[2]
+
+        self.field_list = [self.RHN1(),
+                           self.Zprime(),
+                           self.Phi(),
+                           self.G()]
+            
+
+    def alpha_BL(self, t):
+        return pi * self.alpha_BL0 / (pi - 6 * t * self.alpha_BL0)
+    
+    
+    # renormalization group equations (RGEs) for ONE RHN...need to check dalpha_Y
+    def RGE(self, t, alphas): # if solve_ivp doesn't like 'self', insert this in RGE_solutions
+        alpha_lambda, alpha_Y = alphas
+        dalpha_lambda = (10 * alpha_lambda**2 + alpha_lambda * \
+                            (alpha_Y - 24 * self.alpha_BL(t)) + \
+                            48 * self.alpha_BL(t)**2 - \
+                            0.5 * alpha_Y**2) / 2 / pi
+        dalpha_Y = (alpha_Y * (alpha_Y - 18 * self.alpha_BL(t))) / 2 / pi
+        return [dalpha_lambda, dalpha_Y]
+    
+        # RGEs "initial" conditions
+    def alpha_Y0(self):
+        return self.k**2 * self.alpha_BL0
+        # we assume the Majorana Yukawa and B-L couplings are proportional:
+        # Y = k g_{B-L}
+
+    def alpha_lambda0(self): # Eq. (16) of https://arxiv.org/pdf/0902.4050.pdf
+        return (-4 * pi + sqrt(16 * pi**2 + 5 * (-96 * self.alpha_BL0**2 + self.alpha_Y0()**2))) / 10
+    
+        # RGEs solutions using solve_ivp...would solve_bvp work better?
+    def RGE_solutions(self):
+
+        # t_eval may not be necessary
+        t_eval1 = np.linspace(log(1), log(self.phi_min), 100)
+        t_eval2 = np.linspace(log(1), log(self.phi_max), 10)
+        
+        # sol1 gives solutions for t in [log(phi_min), 0]
+        # sol2 gives solutions for t in [0, log(phi_max)]
+        sol1 = solve_ivp(self.RGE, [log(1), log(self.phi_min)], [self.alpha_lambda0(), self.alpha_Y0()], t_eval=t_eval1)
+        sol2 = solve_ivp(self.RGE, [log(1), log(self.phi_max)], [self.alpha_lambda0(), self.alpha_Y0()], t_eval=t_eval2)
+        t_values = np.concatenate((sol1.t[::-1], sol2.t[1:]))
+        return [t_values, sol1, sol2]
+
+    def alpha_lambda(self, t):
+        alpha_lambda_values = np.concatenate((self.sol1.y[0,::-1], self.sol2.y[0,1:]))
+        return interp1d(self.t_values, alpha_lambda_values)(t)
+
+    def alpha_Y(self, t):
+        alpha_Y_values = np.concatenate((self.sol1.y[1,::-1], self.sol2.y[1,1:]))
+        return interp1d(self.t_values, alpha_Y_values)(t)
+    
+
+    def t(self, phi, T=0):
+        phi, T = np.asanyarray((phi, T))
+        return log(max(phi,T) / self.mu)
+    
+    # particles
+    # def field_list(self):
+    #     return [Field(1, self.m2_RHN1, 'fermion', 'right-handed neutrino'), \
+    #             Field(3, self.m2_Zprime, 'boson', "Z'"), \
+    #             Field(1, self.m2_Phi, 'boson', 'phi'), \
+    #             Field(1, self.m2_G, 'boson', 'Goldstone boson')]
+    def RHN1(self):
+        return Field(1, self.m2_RHN1, 'fermion', 'right-handed neutrino')
+    def Zprime(self):
+        return Field(3, self.m2_Zprime, 'boson', "Z'")
+    def Phi(self):
+        return Field(1, self.m2_Phi, 'boson', 'phi')
+    def G(self):
+        return Field(1, self.m2_G, 'boson', 'Goldstone boson')
+
+    # squared particle masses  
+    def m2_RHN1(self, phi, T):  # right-handed neutrino
+        return (4 * pi * self.alpha_Y( self.t(phi,T) )) * phi**2 / 2
+    
+    def m2_Zprime(self, phi, T): # B-L gauge boson
+        return 4 * (4 * pi * self.alpha_BL( self.t(phi,T) )) * phi**2
+    
+    def m2_Phi(self, phi, T): # B-L symmetry-breaking scalar
+        return 3 * (4 * pi * self.alpha_lambda( self.t(phi,T) )) * phi**2
+    
+    def m2_G(self, phi, T): # Goldstone boson
+        return (4 * pi * self.alpha_lambda( self.t(phi,T) )) * phi**2
+    
+      
+    #Debeye masses?
+
+    # potentials
+    def Veff0(self, phi, T=0): # zero temperature RG-improved potential
+
+        def negative_gamma(t): # anomalous dimension for one RHN
+            return -(self.alpha_Y(t) - 24 * self.alpha_BL(t)) / 8 / pi
+        def G(t):
+            return exp( quad(negative_gamma, 0.0, t)[0] )
+        
+        def V0(phi):
+            return pi * self.alpha_lambda(self.t(phi, T)) * G(self.t(phi, T))**4 * phi**4
+      
+        return V0(phi) - V0(self.phi_min)
+
+    def __call__(self, phi, T):
+        if T==0:
+            return self.Veff0(phi,T)
+        else:
+            def boson_sum(phi, T):
+                return sum(field.dof * J_B(field.mass_squared(phi,T)/T**2) \
+                        for field in self.field_list if field.type=='boson')
+            def fermion_sum(phi, T):
+                return sum(field.dof * J_F(field.mass_squared(phi,T)/T**2) \
+                        for field in self.field_list if field.type=='fermion')
+
+            def VT(phi):
+                return self.Veff0(phi, T) + \
+                        (T**4 / 2 / pi**2) * (boson_sum(phi,T) + fermion_sum(phi,T))
+
+            return VT(phi) - VT(self.phi_min)
