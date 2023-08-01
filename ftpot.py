@@ -153,10 +153,11 @@ class VEffMarfatia2(VFT):
 
 # class for specifying particle information relevant to thermal potentials
 class Field(object):
-    def __init__(self, dof=0, mass_squared=None, type='', name=''):
-        self.dof = dof
-        self.mass_squared = mass_squared
-        self.type = type
+    def __init__(self, dof=0, mass_squared=None, dmass_squared=None, type='', name=''):
+        self.dof = dof # particle degrees of freedom
+        self.mass_squared = mass_squared # particle mass squared
+        self.dmass_squared = dmass_squared # phi derivative of mass squared
+        self.type = type # 'boson' or 'fermion'
         self.name = name
     
     def __str__(self):
@@ -228,11 +229,23 @@ class VeffBL(VFT):
     def alpha_Y(self, t):
         alpha_Y_values = np.concatenate((self.sol1.y[1,::-1], self.sol2.y[1,1:]))
         return interp1d(self.t_values, alpha_Y_values)(t)
-    
 
     def t(self, phi, T=0):
-        phi, T = np.asanyarray((phi, T))
+        #phi, T = np.asanyarray((phi, T))
         return log(max(phi,T) / self.mu)
+    
+    # derivatives
+    def dalpha_lambda(self, t):
+        return derivative(self.alpha_lambda, t, 1e-6)
+    def dalpha_Y(self, t):
+        return derivative(self.alpha_Y, t, 1e-6)
+    def dalpha_BL(self, t):
+        return derivative(self.alpha_BL, t, 1e-6)
+    def dt(self, phi, T):
+        if phi <= T:
+            return 0
+        if phi > T:
+            return 1 / phi
     
     # particles
     # def field_list(self):
@@ -241,13 +254,13 @@ class VeffBL(VFT):
     #             Field(1, self.m2_Phi, 'boson', 'phi'), \
     #             Field(1, self.m2_G, 'boson', 'Goldstone boson')]
     def RHN1(self):
-        return Field(1, self.m2_RHN1, 'fermion', 'right-handed neutrino')
+        return Field(1, self.m2_RHN1, self.dm2_RHN1, 'fermion', 'right-handed neutrino')
     def Zprime(self):
-        return Field(3, self.m2_Zprime, 'boson', "Z'")
+        return Field(3, self.m2_Zprime, self.dm2_Zprime, 'boson', "Z'")
     def Phi(self):
-        return Field(1, self.m2_Phi, 'boson', 'phi')
+        return Field(1, self.m2_Phi, self.dm2_Phi, 'boson', 'phi')
     def G(self):
-        return Field(1, self.m2_G, 'boson', 'Goldstone boson')
+        return Field(1, self.m2_G, self.dm2_G, 'boson', 'Goldstone boson')
 
     # squared particle masses  
     def m2_RHN1(self, phi, T):  # right-handed neutrino
@@ -262,10 +275,28 @@ class VeffBL(VFT):
     def m2_G(self, phi, T): # Goldstone boson
         return (4 * pi * self.alpha_lambda( self.t(phi,T) )) * phi**2
     
+    # phi-derivatives of squared masses
+    def dm2_RHN1(self, phi, T):
+        dm2_dt = 2 * pi * self.dalpha_Y(self.t(phi, T)) * self.dt(phi, T) * phi**2 + \
+            8 * pi * self.alpha_Y(self.t(phi, T)) * phi
+        return dm2_dt
+    def dm2_Zprime(self, phi, T):
+        dm2_dt = 16 * pi * self.dalpha_BL(self.t(phi, T)) * self.dt(phi, T) * phi**2 + \
+            32 * pi * self.alpha_BL(self.t(phi, T)) * phi
+        return dm2_dt
+    def dm2_Phi(self, phi, T):
+        dm2_dt = 12 * pi * self.dalpha_lambda(self.t(phi, T)) * self.dt(phi, T) * phi**2 + \
+            24 * pi * self.alpha_lambda(self.t(phi, T)) * phi
+        return dm2_dt
+    def dm2_G(self, phi, T):
+        dm2_dt = 4 * pi * self.dalpha_lambda(self.t(phi, T)) * self.dt(phi, T) * phi**2 + \
+            8 * pi * self.alpha_lambda(self.t(phi, T)) * phi
+        return dm2_dt
+    
       
     #Debeye masses?
 
-    # potentials
+    # potentials...only the real parts
     def Veff0(self, phi, T=0): # zero temperature RG-improved potential
 
         def negative_gamma(t): # anomalous dimension for one RHN
@@ -276,7 +307,7 @@ class VeffBL(VFT):
         def V0(phi):
             return pi * self.alpha_lambda(self.t(phi, T)) * G(self.t(phi, T))**4 * phi**4
       
-        return V0(phi) - V0(self.phi_min)
+        return np.real( V0(phi) - V0(self.phi_min) )
 
     def __call__(self, phi, T):
         if T==0:
@@ -293,4 +324,28 @@ class VeffBL(VFT):
                 return self.Veff0(phi, T) + \
                         (T**4 / 2 / pi**2) * (boson_sum(phi,T) + fermion_sum(phi,T))
 
-            return VT(phi) - VT(self.phi_min)
+            return np.real( VT(phi) - VT(self.phi_min) )
+        
+    def dVeff(self, phi, T=0): # derivative with respect to phi
+        def negative_gamma(t): # anomalous dimension for one RHN
+            return -(self.alpha_Y(t) - 24 * self.alpha_BL(t)) / 8 / pi
+        def G(t):
+            return exp( quad(negative_gamma, 0.0, t)[0] )
+        
+        def dG4(t):
+            return - ( self.alpha_Y(self.t(phi, T)) - 24 * self.alpha_BL(self.t(phi, T)) ) * G(self.t(phi, T))**4 / 2 / pi
+        
+        def dboson_sum(phi, T):
+            return sum(field.dof * dJ_B(field.mass_squared(phi,T)/T**2) * field.dmass_squared(phi, T) \
+                    for field in self.field_list if field.type=='boson')
+        def dfermion_sum(phi, T):
+            return sum(field.dof * dJ_F(field.mass_squared(phi,T)/T**2) * field.dmass_squared(phi, T) \
+                    for field in self.field_list if field.type=='fermion')
+
+        
+        dV_dphi = 4 * pi * self.alpha_lambda(self.t(phi, T)) * G(self.t(phi, T))**4 * phi**3 + \
+        pi * (self.dalpha_lambda(self.t(phi, T))) * G(self.t(phi, T))**4 * self.dt(phi, T) * phi**4 + \
+        pi * self.alpha_lambda(self.t(phi, T)) * dG4(self.t(phi, T)) * self.dt(phi, T) * phi**4 + \
+        (T**2 / 2 / pi**2) * (dboson_sum(phi, T) + dfermion_sum(phi, T))
+
+        return np.real(dV_dphi)

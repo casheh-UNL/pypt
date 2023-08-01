@@ -35,19 +35,19 @@ def J_F(a):
     return result
 
 def dJ_B(a):
-    integrand = lambda x: exp(-cmath.sqrt(a + x**2)) * x**2 / \
-                ( 2 * (1 - exp(-cmath.sqrt(a + x**2))) * cmath.sqrt(a + x**2))
-    result, error = quad(integrand, 0, np.inf)
+    #integrand = lambda x: exp(-cmath.sqrt(a + x**2)) * x**2 / \
+    #            ( 2 * (1 - exp(-cmath.sqrt(a + x**2))) * cmath.sqrt(a + x**2) )
+    #result, error = quad(integrand, 0.0, np.inf)
     # approximation
-    #n_list = range(1,11)
-    #result = 0.5 * cmath.sqrt(a) * sum( (1)**n * kv(1, n * cmath.sqrt(a)) / n for n in n_list )
+    n_list = range(1,11)
+    result = 0.5 * cmath.sqrt(a) * sum( (1)**n * kv(1, n * cmath.sqrt(a)) / n for n in n_list )
     return result
 
 def dJ_F(a):
-    integrand = lambda x: -exp(-cmath.sqrt(a + x**2)) * x**2 / \
-                ( 2 * (1 + exp(-cmath.sqrt(a + x**2))) * cmath.sqrt(a + x**2))
-    result, error = quad(integrand, 0, np.inf)
+    #integrand = lambda x: -exp(-cmath.sqrt(a + x**2)) * x**2 / \
+    #            ( 2 * (1 + exp(-cmath.sqrt(a + x**2))) * cmath.sqrt(a + x**2) )
+    #result, error = quad(integrand, 0.0, np.inf)
     # approximation
-    #n_list = range(1,11)
-    #result = 0.5 * cmath.sqrt(a) * sum( (-1)**n * kv(1, n * cmath.sqrt(a)) / n for n in n_list )
+    n_list = range(1,11)
+    result = 0.5 * cmath.sqrt(a) * sum( (-1)**n * kv(1, n * cmath.sqrt(a)) / n for n in n_list )
     return result
