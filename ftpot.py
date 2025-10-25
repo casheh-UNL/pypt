@@ -123,7 +123,7 @@ class VeffBL(object):
     # derivatives with respect to t
     def dalpha_lambda(self, t):
         # return derivative(self.alpha_lambda, t, 1e-6)
-        return derivative(self.alpha_lambda, step=1e-6)(t)
+        return Derivative(self.alpha_lambda, step=1e-6)(t)
     def dalpha_Y(self, t):
         num = -3*pi**(5/2) * np.sqrt(pi - 6*t*self.alpha_BL0) * (30*self.alpha_BL0 - self.alpha_Y0) + 2*(pi - 6*t*self.alpha_BL0)**3 * self.alpha_Y0
         den = pi**(5/2) * (30*self.alpha_BL0 - self.alpha_Y0) + (pi - 6*t*self.alpha_BL0)**(5/2) * self.alpha_Y0
@@ -303,7 +303,7 @@ class VeffBL(object):
         phi = np.atleast_1d(np.abs(phi)) # potential has Z_2 symmetry
         derivs = np.array([
             # derivative(lambda Phi: self.dVeffBL(Phi, T), phi_val, 1e-6*self.mu)
-            derivative(lambda Phi: self.dVeffBL(Phi, T), step=1e-6*self.mu)(phi_val)
+            Derivative(lambda Phi: self.dVeffBL(Phi, T), step=1e-6*self.mu)(phi_val)
             for phi_val in phi
             ])
         return derivs[0] if derivs.size == 1 else derivs
@@ -394,7 +394,7 @@ class VeffBL(object):
         # So we'll use the numerical derivatives for now:
         derivs = np.array([
             # derivative(lambda temp: self.__call__(phi, temp), Temp, 1e-6*self.mu)
-            derivative(lambda temp: self.__call__(phi, temp), step=1e-6*self.mu)(Temp)
+            Derivative(lambda temp: self.__call__(phi, temp), step=1e-6*self.mu)(Temp)
             for Temp in T
             ])
 
@@ -406,7 +406,7 @@ class VeffBL(object):
         phi, T = np.array(phi), np.atleast_1d(T)
         derivs = np.array([
             # derivative(lambda temp: self.dVeffBL_dT(phi, temp), temp, dx=1e-6 * self.mu)
-            derivative(lambda temp: self.dVeffBL_dT(phi, temp), step=1e-6*self.mu)(Temp)
+            Derivative(lambda temp: self.dVeffBL_dT(phi, temp), step=1e-6*self.mu)(Temp)
             for Temp in T
         ])
 

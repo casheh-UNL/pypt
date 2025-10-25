@@ -11,7 +11,7 @@ import cmath
 from scipy.optimize import fsolve, root, root_scalar
 from scipy.integrate import quad, solve_ivp, simpson
 # from scipy.misc import derivative # outdated
-from numdifftools import Derivative as derivative
+from numdifftools import Derivative
 from scipy.interpolate import interp1d
 from scipy.special import kv
 from scipy.signal import argrelmin
