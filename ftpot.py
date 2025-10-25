@@ -2,7 +2,9 @@ from .pt_math import *
 
 # class for specifying particle information relevant to thermal potentials
 class Field(object):
-    def __init__(self, dof=0, mass_squared=None, dmass_squared=None, dmass_squared_dT=None, Debye_mass_squared=None, dDebye_mass_squared=None, dDebye_mass_squared_dT=None, type='', name=''):
+    def __init__(self, dof=0, mass_squared=None, dmass_squared=None, dmass_squared_dT=None,
+                 Debye_mass_squared=None, dDebye_mass_squared=None, dDebye_mass_squared_dT=None,
+                 type='', name='', has_longitudinal_mode=False):
         self.dof = dof # particle degrees of freedom
         self.mass_squared = mass_squared # particle mass squared
         self.dmass_squared = dmass_squared # phi derivative of mass squared
@@ -12,6 +14,7 @@ class Field(object):
         self.dDebye_mass_squared_dT = dDebye_mass_squared_dT # T derivative of Debye mass squared
         self.type = type # 'boson' or 'fermion'
         self.name = name
+        self.has_longitudinal_mode = has_longitudinal_mode # for Arnold-Espinosa thermal resummation
     
     def __str__(self):
         return f'field: {self.name} // type: {self.type} // DoF = {self.dof} // mass squared: {self.mass_squared} // d(mass squared)/dphi: {self.dmass_squared}'
@@ -137,7 +140,9 @@ class VeffBL(object):
     def RHN1(self): # Majorana fermions are their own antiparticles
         return Field(dof=2, mass_squared=self.m2_RHN1, dmass_squared=self.dm2_RHN1, dmass_squared_dT=self.dm2_dT_RHN1, type='fermion', name=r'$\nu_R$')
     def Zprime(self): # gauge bosons are real-valued so cannot have antiparticles
-        return Field(3, self.m2_Zprime, self.dm2_Zprime, self.dm2_dT_Zprime, self.Pi_Zprime, self.dPi_Zprime, self.dPi_dT_Zprime, 'boson', r'$Z^\prime$')
+        # While massless, vector bosons should have only 2 DoF...do thermal (Debye) masses inform these DoF?
+        return Field(3, self.m2_Zprime, self.dm2_Zprime, self.dm2_dT_Zprime, self.Pi_Zprime, self.dPi_Zprime, self.dPi_dT_Zprime, 'boson', r'$Z^\prime$',
+                     has_longitudinal_mode=True)
     def Phi(self): # this is the real component after symmetry breaking
         return Field(1, self.m2_Phi, self.dm2_Phi, self.dm2_dT_Phi, self.Pi_Phi, self.dPi_Phi, self.dPi_dT_Phi, 'boson', r'$\phi$')
     def G(self): # again, real field after symmetry breaking
@@ -235,17 +240,17 @@ class VeffBL(object):
     def Veff0_no_shift(self, phi): # zero-temperature RG-improved potential
         phi, T = np.array(phi), np.array(0)
 
-        def negative_gamma(t): # anomalous dimension for one RHN
-            return -(self.alpha_Y(t) - 24 * self.alpha_BL(t)) / 8 / pi
-        def G(t):
-            try:
-                return exp( quad(negative_gamma, 0.0, t)[0] )
-            except:
-                return np.array( [exp (quad(negative_gamma, 0., t_)[0]) for t_ in t] ).reshape(np.shape(t))
+        # def negative_gamma(t): # anomalous dimension for one RHN
+        #     return -(self.alpha_Y(t) - 24 * self.alpha_BL(t)) / 8 / pi
+        # def G(t):
+        #     try:
+        #         return exp( quad(negative_gamma, 0.0, t)[0] )
+        #     except:
+        #         return np.array( [exp (quad(negative_gamma, 0., t_)[0]) for t_ in t] ).reshape(np.shape(t))
         
         def V0(phi):
             # return pi * self.alpha_lambda(self.t(phi, T)) * G(self.t(phi, T))**4 * phi**4
-            # more analytic expression?
+            # more analytic expression:
             return np.sqrt(pi)*phi**4 * self.alpha_lambda(self.t(phi, T)) * \
                 (self.alpha_Y0*(pi - 6*self.alpha_BL0*self.t(phi, T))**(5/2) + pi**(5/2)*(30*self.alpha_BL0 - self.alpha_Y0)) \
                 / (30*self.alpha_BL0 * (pi - 6*self.alpha_BL0*self.t(phi, T))**2)
@@ -255,28 +260,193 @@ class VeffBL(object):
     def Veff0(self, phi):
         return self.Veff0_no_shift(phi) - self.Veff0_no_shift(self.phi_min)
 
+
+    def V_daisy_AE(self, field, phi, T):
+        """
+        Arnold–Espinosa daisy correction term for a single bosonic field.
+        Only the longitudinal polarization receives thermal mass correction.
+
+        ΔV_daisy = - (T / 12π) * ñ * [ (m² + Π)^(3/2) - m³ ]
+        """
+        m2 = field.mass_squared(phi, T)
+        d2 = field.Debye_mass_squared(phi, T)
+
+        # Only apply to modes that have a longitudinal component
+        if not getattr(field, "has_longitudinal_mode", False):
+            return np.zeros_like(phi, dtype=float)
+
+        n_tilde = 1.0  # longitudinal DoF
+        m = np.sqrt(np.maximum(m2, 0.0))
+        mT = np.sqrt(np.maximum(m2 + d2, 0.0))
+
+        return - (T / (12 * np.pi)) * n_tilde * (mT**3 - m**3)
+
+    def V_1B(self, phi, T, thermal_resum='Parwani'):
+        '''
+        One-loop, nonzero temperature contributions to the effective potential from real boson fields, vectorized.
+        Parameters
+        ----------
+        phi : array_like
+            Field value(s).
+        T : float
+            Temperature.
+        thermal_resum : str, optional
+            Daisy resummation scheme. Options:
+            - 'Parwani' : Replace m^2 → m^2 + Π(T) everywhere (all DoF resummed)
+            - 'Arnold-Espinosa' : Add separate daisy correction term for
+                                longitudinal bosonic modes only.
+        '''
+        # This logic assumes T != 0, which is handled by the caller.
+        T2 = T**2
+        total_sum = np.zeros_like(phi, dtype=float)
+
+        for field in self.field_list:
+            if field.type == 'boson':
+                # ASSUMPTION: These functions are NumPy-aware
+                m2 = field.mass_squared(phi, T)
+                d2 = field.Debye_mass_squared(phi, T)
+                # --- Parwani scheme ---
+                if thermal_resum.lower() == 'parwani':
+                    # All bosonic degrees of freedom get resummed mass
+                    arg = (m2 + d2) / T2
+                    total_sum += (T**4 / 2 / pi**2) * field.dof * np.real(J_B(arg))
+
+                # --- Arnold–Espinosa scheme ---
+                elif thermal_resum.lower() == 'arnold-espinosa':
+                    # Thermal function evaluated with unresummed mass
+                    arg = m2 / T2
+                    total_sum += (T**4 / 2 / pi**2) * field.dof * np.real(J_B(arg))
+
+                    # Add the separate Daisy correction (longitudinal modes only)
+                    total_sum += self.V_daisy_AE(field, phi, T)
+
+        return total_sum
+
+    def V_1F(self, phi, T):
+        '''
+        One-loop, nonzero temperature contributions to the effective potential from fermion fields, vectorized.
+        '''
+        T2 = T**2
+        total_sum = np.zeros_like(phi, dtype=float)
+
+        for field in self.field_list:
+            if field.type == 'fermion':
+                # ASSUMPTION: These functions are NumPy-aware
+                m2 = field.mass_squared(phi, T)
+                arg = m2/T2
+                
+                # ASSUMPTION: J_F is NumPy-aware
+                total_sum += field.dof * np.real(J_F(arg))
+                
+        return - (T**4 / 2 / pi**2) * total_sum
+        # Some B-L literature forgets this negative sign
+        # e.g. https://arxiv.org/abs/1811.11169 eq. (8)
+        # e.g. https://arxiv.org/abs/2007.15586 eq. (2.2)
+    
+    def dV1B_dphi(self, phi, T):
+        """Helper to calculate the derivative of the bosonic thermal sum w/rt phi, vectorized."""
+        T2 = T**2
+        total_dsum = np.zeros_like(phi, dtype=float)
+
+        for field in self.field_list:
+            if field.type == 'boson':
+                # These functions are assumed to be NumPy-aware
+                m2 = field.mass_squared(phi, T)
+                d2 = field.Debye_mass_squared(phi, T)
+                dm2 = field.dmass_squared(phi, T)       # Derivative of m^2 w/rt phi
+                dd2 = field.dDebye_mass_squared(phi, T) # Derivative of Debye mass^2 w/rt phi
+                
+                arg = m2/T2 + d2/T2
+                darg_dphi = (dm2 + dd2) / T2  # Derivative of the argument w/rt phi
+                
+                # Apply the chain rule: d/dphi [ J_B(arg) ] = dJ_B/darg * darg/dphi
+                # ASSUMPTION: dJ_B is NumPy-aware and returns dJ_B/darg
+                term = field.dof * np.real(dJ_B(arg)) * darg_dphi
+                total_dsum += term
+                
+        return (T**4 / 2 / pi**2) * total_dsum
+
+    def dV1F_dphi(self, phi, T):
+        """Helper to calculate the derivative of the fermionic thermal sum w/rt phi, vectorized."""
+        T2 = T**2
+        total_dsum = np.zeros_like(phi, dtype=float)
+
+        for field in self.field_list:
+            if field.type == 'fermion':
+                # These functions are assumed to be NumPy-aware
+                m2 = field.mass_squared(phi, T)
+                dm2 = field.dmass_squared(phi, T)   # Derivative of m^2 w/rt phi
+                
+                arg = m2/T2
+                darg_dphi = dm2 / T2    # Derivative of the argument w/rt phi
+                
+                # Apply the chain rule: d/dphi [ J_F(arg) ] = dJ_F/darg * darg/dphi
+                # ASSUMPTION: dJ_F is NumPy-aware and returns dJ_F/darg
+                term = field.dof * np.real(dJ_F(arg)) * darg_dphi
+                
+                total_dsum += term
+                
+        return - (T**4 / 2 / pi**2) * total_dsum
+    
+    def Veff_no_shift(self, phi, T):
+        phi = np.abs(np.asarray(phi)) # Z_2 symmetry
+        T = np.asarray(T)
+
+        # Broadcast inputs to a common shape
+        try:
+            phi_b, T_b = np.broadcast_arrays(phi, T)
+        except ValueError as e:
+            raise ValueError(f"phi and T shapes cannot be broadcast: {phi.shape} and {T.shape}") from e
+
+        # ASSUMPTION: self.Veff0_no_shift is NumPy-aware
+        # If not, you must vectorize it:
+        # v_Veff0 = np.vectorize(self.Veff0_no_shift)
+        # V0 = v_Veff0(phi_b)
+        V0 = self.Veff0_no_shift(phi_b)
+        
+        # Initialize the full T-dependent potential
+        V_T = np.array(V0, dtype=float)
+        
+        # Create mask for T > 0
+        mask = (T_b > 0)
+        
+        # Only compute sums where T > 0
+        if np.any(mask):
+            # Find values at the masked locations
+            phi_masked = phi_b[mask]
+            T_masked = T_b[mask]
+            
+            # Calculate sums only for these masked values
+            b_sum = self.V_1B(phi_masked, T_masked)
+            f_sum = self.V_1F(phi_masked, T_masked)
+            
+            # Calculate thermal potential only for these values
+            V_T_masked = b_sum + f_sum
+            
+            # Add these values back into the full-size array
+            V_T[mask] += V_T_masked
+                
+        # The potential values are usually real since the thermal integrals in pt_math.py have their
+        # imaginary components discarded, but for whatever reason, scipy's solvers work better with the
+        # np.real() output
+        return np.real(V_T)
+        
     def __call__(self, phi, T):
         return self.Veff_no_shift(phi, T) - self.Veff_no_shift(self.phi_min, T)
-    
+
+
     # derivative of Veff with respect to phi
     def dVeffBL(self, phi, T=0):
         phi = np.abs(phi) # potential has Z_2 symmetry
         phi, T = np.array(phi), np.array(T)
 
-        def negative_gamma(t): # anomalous dimension for one RHN
-            return -(self.alpha_Y(t) - 24 * self.alpha_BL(t)) / 8 / pi
-        def G(t):
-            try:
-                return exp( quad(negative_gamma, 0.0, t)[0] )
-            except:
-                return np.array( [exp(quad(negative_gamma, 0., t_)[0]) for t_ in t] ).reshape(np.shape(t))
-        
-        def dboson_sum(phi, T):
-            return sum(field.dof * dJ_B(field.mass_squared(phi,T)/T**2 + field.Debye_mass_squared(phi,T)/T**2) * (field.dmass_squared(phi, T) + field.dDebye_mass_squared(phi, T)) \
-                    for field in self.field_list if field.type=='boson')
-        def dfermion_sum(phi, T):
-            return sum(field.dof * dJ_F(field.mass_squared(phi,T)/T**2) * (field.dmass_squared(phi, T)) \
-                    for field in self.field_list if field.type=='fermion')
+        # def negative_gamma(t): # anomalous dimension for one RHN
+        #     return -(self.alpha_Y(t) - 24 * self.alpha_BL(t)) / 8 / pi
+        # def G(t):
+        #     try:
+        #         return exp( quad(negative_gamma, 0.0, t)[0] )
+        #     except:
+        #         return np.array( [exp(quad(negative_gamma, 0., t_)[0]) for t_ in t] ).reshape(np.shape(t))
 
         # dV_dphi = 4 * pi * self.alpha_lambda(self.t(phi, T)) * G(self.t(phi, T))**4 * phi**3 + \
         #           pi * (self.dalpha_lambda(self.t(phi, T))) * G(self.t(phi, T))**4 * self.dt(phi, T) * phi**4 + \
@@ -291,7 +461,8 @@ class VeffBL(object):
              - 15*alpha_BL0*alpha_Y0 * term**(5/2) * self.alpha_lambda(self.t(phi, T)) * phi * self.dt(phi, T) \
                 + 4*term*self.alpha_lambda(self.t(phi, T)) * (alpha_Y0* term**(5/2) + pi**(5/2)*(30*alpha_BL0 - alpha_Y0)) \
                     + 12*alpha_BL0*self.alpha_lambda(self.t(phi, T)) * phi * self.dt(phi, T) * (alpha_Y0*term**(5/2) + pi**(5/2)*(30*alpha_BL0 - alpha_Y0)))
-        dV_dphi = dV0_dphi + (T**2 / 2 / pi**2) * (dboson_sum(phi, T) + dfermion_sum(phi, T))
+
+        dV_dphi = dV0_dphi + self.dV1B_dphi(phi, T) + self.dV1F_dphi(phi, T)
 
         # handle T = 0 cases
         result = np.where(T==0, dV0_dphi, dV_dphi)
@@ -308,49 +479,6 @@ class VeffBL(object):
             ])
         return derivs[0] if derivs.size == 1 else derivs
     
-    def Veff_no_shift(self, phi, T):
-        phi = np.abs(phi) # potential has Z_2 symmetry
-        try:
-            if T==0:
-                return self.Veff0_no_shift(phi)
-            else:
-                def boson_sum(phi, T):
-                    return sum(field.dof * J_B(field.mass_squared(phi,T)/T**2 + field.Debye_mass_squared(phi,T)/T**2) \
-                            for field in self.field_list if field.type=='boson')
-                def fermion_sum(phi, T):
-                    return sum(field.dof * J_F(field.mass_squared(phi,T)/T**2) \
-                            for field in self.field_list if field.type=='fermion')
-
-                def VT(phi):
-                    return self.Veff0_no_shift(phi) + \
-                            (T**4 / 2 / pi**2) * (boson_sum(phi,T) + fermion_sum(phi,T))
-
-                return np.real( VT(phi) )
-        except:
-            phi_array, T_array = np.array(phi), np.array(T)
-            results = []
-            for phi, T in zip(phi_array.flatten(), T_array.flatten()):
-                if T==0:
-                    results.append(self.Veff0_no_shift(phi))
-                else:
-                    def boson_sum(phi, T):
-                        return sum(field.dof * J_B(field.mass_squared(phi,T)/T**2 + field.Debye_mass_squared(phi,T)/T**2) \
-                                for field in self.field_list if field.type=='boson')
-                    def fermion_sum(phi, T):
-                        return sum(field.dof * J_F(field.mass_squared(phi,T)/T**2) \
-                                for field in self.field_list if field.type=='fermion')
-
-                    def VT(phi):
-                        return self.Veff0_no_shift(phi) + \
-                                (T**4 / 2 / pi**2) * (boson_sum(phi,T) + fermion_sum(phi,T))
-
-                    results.append( np.real( VT(phi) ) )
-                            # the potential values are usually real since
-                            # the thermal integrals in pt_math.py have their
-                            # imaginary components discarded, but for whatever
-                            # reason, scipy's solvers work better with the
-                            # np.real() output
-            return np.array(results)#.reshape(np.shape(T_array))
         
     # derivative of Veff with respect to T
     def dVeffBL_dT(self, phi, T=0):
