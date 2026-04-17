@@ -18,7 +18,7 @@ from .eff_DoF.eff_DoF import g_SM
 from numdifftools import Derivative as derivative
 
 def g_rad(T):
-    return g_SM(T) + 2*1 + 1*3 + 1*1 + 1*1
+    return g_SM(T) # + 2*1 + 1*3 + 1*1 + 1*1
 def dg_rad(T):
     return derivative(g_rad, step=1e-2)(T)
 def d2g_rad(T):

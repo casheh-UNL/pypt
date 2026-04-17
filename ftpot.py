@@ -605,9 +605,10 @@ class VeffBL(object):
         plt.grid()
         plt.show()
     
-    def find_surface_tension(self):
+    def find_surface_tension(self, phi_c=None, T_c=None):
         # bubble surface tension, which is calculated at the critical temperature
-        phi_c, T_c = self.find_critical_phi_and_temperature()
+        if (phi_c is None) and (T_c is None):
+            phi_c, T_c = self.find_critical_phi_and_temperature()
 
         # generate points for integration
         phi_values = np.linspace(self.phi_min, phi_c, num=1001)  # Simpson's rule requires an odd number of points
